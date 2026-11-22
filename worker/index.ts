@@ -6,7 +6,7 @@ import { RoomDO } from './room';
 export { RoomDO };
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const MAX_BYTES = 40 * 1024 * 1024;
+const MAX_BYTES = 20 * 1024 * 1024;
 const AUDIO_CHUNK = 20 * 1024 * 1024;
 const MAX_ART_BYTES = 12 * 1024 * 1024;
 
@@ -140,7 +140,7 @@ async function uploadTrack(request: Request, env: Env, code: string): Promise<Re
   if (!(file instanceof File) || file.size === 0) {
     return json({ error: 'No audio received.' }, 400);
   }
-  if (file.size > MAX_BYTES) return json({ error: 'That file is larger than 40 MB.' }, 413);
+  if (file.size > MAX_BYTES) return json({ error: 'That file is larger than 20 MB.' }, 413);
 
   const originalName = file.name || 'audio.mp3';
   const ext = safeExtension(originalName);

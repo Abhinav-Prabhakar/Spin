@@ -21,7 +21,7 @@ interface AbortFlag {
   xhr?: XMLHttpRequest;
 }
 
-const MAX_BYTES = 40 * 1024 * 1024;
+const MAX_BYTES = 20 * 1024 * 1024;
 const AUDIO_EXTENSIONS = ['.mp3', '.m4a', '.mp4', '.aac', '.wav', '.ogg', '.oga', '.flac', '.webm', '.opus'];
 /* Upload one file at a time so the queue keeps the order they were picked in. */
 const CONCURRENCY = 1;
@@ -156,7 +156,7 @@ export function useUploads(
       }
 
       if (rejected > 0) {
-        onToast(rejected === 1 ? 'Only audio files up to 40 MB.' : `${rejected} files skipped — audio only.`);
+        onToast(rejected === 1 ? 'Only audio files up to 20 MB.' : `${rejected} files skipped — audio only.`);
       }
       if (accepted.length === 0) return;
 
