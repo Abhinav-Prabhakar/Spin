@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120" viewBox="0 0 240 120" role="img" aria-label="Spin">
+  <g font-family="Inter, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif">
+    <circle cx="44" cy="60" r="26" fill="#101010"/>
+    <path d="M39 48.5 58.5 60 39 71.5Z" fill="#ffffff"/>
+    <text x="82" y="77" font-size="46" font-weight="650" letter-spacing="-0.055em" fill="#101010">spin</text>
+    <circle cx="184" cy="74" r="5.5" fill="#ff4b2b"/>
+  </g>
+</svg>
