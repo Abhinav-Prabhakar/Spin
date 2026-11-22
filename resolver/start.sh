@@ -13,7 +13,7 @@ if [ "${WARP_PROXY:-0}" = "1" ]; then
     attempt=1
     while [ "$attempt" -le 3 ]; do
       echo "usque: registering (attempt $attempt)"
-      if usque register -c "$CFG"; then break; fi
+      if usque register -c "$CFG" --accept-tos; then break; fi
       attempt=$((attempt + 1))
       sleep 3
     done
