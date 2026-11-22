@@ -226,8 +226,14 @@ function clean(value) {
 }
 
 function short(err) {
+  const stderr = typeof err?.stderr === 'string' ? err.stderr.trim() : '';
   const message = err instanceof Error ? err.message : String(err);
-  return message.split('\n').find((line) => line.trim())?.slice(0, 180) ?? 'unknown error';
+  const lines = (stderr || message)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const errorLine = lines.find((line) => /^ERROR:/i.test(line));
+  return (errorLine || lines[0] || 'unknown error').slice(0, 300);
 }
 
 function parseRange(header, total) {
