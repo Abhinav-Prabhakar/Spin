@@ -25,6 +25,7 @@ const execFileAsync = promisify(execFile);
 const PORT = Number(process.env.PORT || 8787);
 const KEY = process.env.RESOLVER_KEY || '';
 const YTDLP = process.env.YTDLP_BIN || 'yt-dlp';
+const YTDLP_CLIENT = (process.env.YTDLP_CLIENT || '').trim();
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
 const TTL_MS = Number(process.env.TTL_MS || 6 * 60 * 60 * 1000);
 const MAX_ACTIVE = Number(process.env.MAX_ACTIVE || 3);
@@ -77,6 +78,12 @@ async function run(args, timeout) {
     windowsHide: true,
   });
   return stdout;
+}
+
+/** Pin the YouTube client when the default one is rejected (e.g. bot checks). */
+function clientArgs(client) {
+  const name = (client || YTDLP_CLIENT).trim();
+  return name ? ['--extractor-args', `youtube:player_client=${name}`] : [];
 }
 
 function json(res, status, body) {
@@ -142,7 +149,15 @@ async function resolveUrl(url) {
   let info;
   try {
     const stdout = await run(
-      ['--no-playlist', '--no-warnings', '--no-update', '--skip-download', '-J', target.toString()],
+      [
+        '--no-playlist',
+        '--no-warnings',
+        '--no-update',
+        '--skip-download',
+        '-J',
+        ...clientArgs(),
+        target.toString(),
+      ],
       METADATA_TIMEOUT,
     );
     info = JSON.parse(stdout);
@@ -170,6 +185,7 @@ async function resolveUrl(url) {
           'bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio',
           '-o',
           join(dir, 'audio.%(ext)s'),
+          ...clientArgs(),
           target.toString(),
         ],
         DOWNLOAD_TIMEOUT,
@@ -329,6 +345,42 @@ const server = createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/health') {
     json(res, 200, { ok: true });
+    return;
+  }
+
+  // Diagnostic: ask yt-dlp for metadata with a specific YouTube client.
+  if (req.method === 'GET' && url.pathname === '/probe') {
+    if (KEY && req.headers.authorization !== `Bearer ${KEY}`) {
+      json(res, 401, { error: 'Unauthorized.' });
+      return;
+    }
+    const target = url.searchParams.get('url') || '';
+    const client = (url.searchParams.get('client') || '').trim();
+    const started = Date.now();
+    try {
+      const stdout = await run(
+        [
+          '--no-playlist',
+          '--no-warnings',
+          '--no-update',
+          '--skip-download',
+          '-J',
+          ...clientArgs(client),
+          target,
+        ],
+        METADATA_TIMEOUT,
+      );
+      const info = JSON.parse(stdout);
+      json(res, 200, {
+        ok: true,
+        client: client || 'default',
+        title: info.title,
+        formats: Array.isArray(info.formats) ? info.formats.length : 0,
+        ms: Date.now() - started,
+      });
+    } catch (err) {
+      json(res, 200, { ok: false, client: client || 'default', error: short(err), ms: Date.now() - started });
+    }
     return;
   }
 
