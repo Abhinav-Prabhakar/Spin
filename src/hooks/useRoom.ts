@@ -60,6 +60,7 @@ export interface RoomModel {
   removeTrack: (id: string) => void;
   react: () => void;
   playerEnded: (trackId: string) => void;
+  reportMeta: (id: string, duration: number, peaks: number[]) => void;
 }
 
 export function useRoom(code: string): RoomModel {
@@ -295,6 +296,13 @@ export function useRoom(code: string): RoomModel {
     emit({ t: 'ended', trackId });
   }, [emit]);
 
+  const reportMeta = useCallback(
+    (id: string, duration: number, peaks: number[]) => {
+      emit({ t: 'meta', id, duration, peaks });
+    },
+    [emit],
+  );
+
   return {
     status,
     error,
@@ -311,5 +319,6 @@ export function useRoom(code: string): RoomModel {
     removeTrack,
     react,
     playerEnded,
+    reportMeta,
   };
 }

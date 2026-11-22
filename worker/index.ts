@@ -1,6 +1,7 @@
 import { parseBlob } from 'music-metadata';
 import type { StoredTrack, Track } from '../shared/types';
 import type { Env } from './env';
+import { LinkError, resolveLink, type ResolvedLink } from './link';
 import { RoomDO } from './room';
 
 export { RoomDO };
@@ -68,6 +69,11 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (parts.length === 4 && parts[3] === 'tracks') {
       if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
       return uploadTrack(request, env, code);
+    }
+
+    if (parts.length === 4 && parts[3] === 'link') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
+      return addLink(request, env, code);
     }
 
     return json({ error: 'Not found.' }, 404);
@@ -240,6 +246,75 @@ async function uploadTrack(request: Request, env: Env, code: string): Promise<Re
   return json(track, 201);
 }
 
+// ---- links -------------------------------------------------------------
+
+async function addLink(request: Request, env: Env, code: string): Promise<Response> {
+  const stub = roomStub(env, code);
+  const info = await stub.info();
+  if (!info.exists) return json({ error: 'Room not found.' }, 404);
+  if (info.trackCount >= 500) return json({ error: 'This room is full.' }, 507);
+
+  const contentType = request.headers.get('Content-Type') ?? '';
+  if (!contentType.toLowerCase().includes('application/json')) {
+    return json({ error: 'Send { "url": "https://…" }.' }, 400);
+  }
+  const declared = Number(request.headers.get('Content-Length'));
+  if (Number.isFinite(declared) && declared > 8 * 1024) {
+    return json({ error: 'That link is too long.' }, 413);
+  }
+
+  let body: { url?: unknown; sid?: unknown };
+  try {
+    body = (await request.json()) as { url?: unknown; sid?: unknown };
+  } catch {
+    return json({ error: 'Send { "url": "https://…" }.' }, 400);
+  }
+
+  const rawUrl = typeof body.url === 'string' ? body.url.trim() : '';
+  if (!rawUrl) return json({ error: 'Paste a link first.' }, 400);
+
+  let resolved: ResolvedLink;
+  try {
+    resolved = await resolveLink(env, rawUrl);
+  } catch (err) {
+    if (err instanceof LinkError) return json({ error: err.message }, err.status);
+    console.error('[spin] link resolve failed', err);
+    return json({ error: 'Could not read that link.' }, 502);
+  }
+
+  const sid = typeof body.sid === 'string' ? body.sid : '';
+  const addedBy = sid ? await stub.userFor(sid) : null;
+  const ext = extensionForMime(resolved.mime);
+
+  const stored: StoredTrack = {
+    id: crypto.randomUUID(),
+    title: resolved.title,
+    artist: resolved.artist,
+    album: resolved.album,
+    duration: resolved.duration,
+    peaks: [],
+    addedAt: Date.now(),
+    addedBy,
+    origin: resolved.origin,
+    srcUrl: resolved.srcUrl,
+    artUrl: resolved.artUrl ?? undefined,
+    provider: resolved.provider,
+    size: resolved.size,
+    ext,
+    artExt: null,
+    chunks: 0,
+  };
+
+  let track: Track | null = null;
+  try {
+    track = await stub.addTrack(stored);
+  } catch (err) {
+    console.error('[spin] addTrack failed', err);
+  }
+  if (!track) return json({ error: 'This room is full.' }, 507);
+  return json(track, 201);
+}
+
 // ---- media -------------------------------------------------------------
 
 const IMMUTABLE = 'public, max-age=31536000, immutable';
@@ -407,6 +482,19 @@ function safeExtension(filename: string): string {
   const dot = filename.lastIndexOf('.');
   const ext = dot >= 0 ? filename.slice(dot).toLowerCase() : '';
   return AUDIO_EXTENSIONS.has(ext) ? ext : '.mp3';
+}
+
+function extensionForMime(mime: string): string {
+  switch (mime) {
+    case 'audio/mp4': return '.m4a';
+    case 'audio/aac': return '.aac';
+    case 'audio/wav': return '.wav';
+    case 'audio/ogg': return '.ogg';
+    case 'audio/flac': return '.flac';
+    case 'audio/webm': return '.webm';
+    case 'audio/opus': return '.opus';
+    default: return '.mp3';
+  }
 }
 
 function audioMime(ext: string): string {

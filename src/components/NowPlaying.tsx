@@ -151,6 +151,12 @@ export function NowPlaying({
         )}
       </div>
 
+      {track && engine.sourceError && (
+        <button type="button" className="track-source-error" onClick={engine.retry}>
+          {engine.sourceError} <span>Try again</span>
+        </button>
+      )}
+
       <Timeline
         peaks={track?.peaks ?? []}
         seed={track?.id ?? 'empty-room'}

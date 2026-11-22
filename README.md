@@ -26,10 +26,11 @@
 
 <p align="center"><sub>A real room, not a screenshot. Everything below is the live app.</sub></p>
 
-Spin is a quiet place to listen with friends. Share a six-character link, drop in MP3s, and every screen hears the same second — with a proper ten-band equalizer and nothing else. No accounts, no library, no feed.
+Spin is a quiet place to listen with friends. Share a six-character link, drop in MP3s or paste a URL, and every screen hears the same second — with a proper ten-band equalizer and nothing else. No accounts, no library, no feed.
 
 - **Same second.** One Durable Object owns the clock; late joiners, reconnects and phone browsers all land exactly where the room is.
 - **Ten bands.** ±12 dB, six presets, and your curve is saved on this device. Built on a real Web Audio filter chain.
+- **Files or links.** Upload an MP3, or paste direct audio, an episode page, a podcast feed, a playlist or a YouTube link.
 - **Just a link.** Drag to reorder the queue, send hearts, see who is listening, copy an invite. That is the whole product.
 
 <p align="center">
@@ -62,12 +63,35 @@ Spin is a quiet place to listen with friends. Share a six-character link, drop i
 
 <p align="center"><sub>The same room, one thumb.</sub></p>
 
+## Share a link
+
+Paste a URL into the queue and Spin will find the audio:
+
+- direct audio (`mp3`, `m4a`, `aac`, `wav`, `ogg`, `flac`, `webm`, `opus`)
+- episode pages with `og:audio`, `<audio>` markup or JSON-LD
+- podcast RSS / Atom feeds (the newest episode wins)
+- `.m3u` and `.pls` playlists
+- Internet Archive `/details/` pages
+
+The room stores only the title, artwork and source URL. Each listener fetches the audio for themselves, which keeps playback in sync and means the server never proxies a byte of it. Duration, and the waveform when the source allows decoding, arrive from the first device that finishes and are shared with the room.
+
+Sources that allow CORS play through Web Audio, so the equalizer and live bars work exactly as they do for uploads. A source that refuses CORS still plays, but uses a plain `<audio>` element and the equalizer panel explains that it cannot shape that source. Files over 32 MB stream from the source instead of being cached as a blob.
+
+**YouTube** needs a resolver: YouTube will not hand usable audio URLs to a Cloudflare Worker's IP, so there is nothing safe to extract server-side. Spin supports an optional resolver service with a small documented contract — see [`resolver/`](resolver/README.md) for a ready-to-deploy `yt-dlp` example. Configure it with:
+
+```bash
+wrangler secret put URL_RESOLVER       # e.g. https://resolver.example.com
+wrangler secret put URL_RESOLVER_KEY   # the resolver's bearer token
+```
+
+Only download content you have the rights to. HLS and DRM services (Spotify, Apple Music, Tidal, Deezer, Amazon Music) are not supported and return a clear message.
+
 ## Under the hood
 
-One Worker routes rooms, uploads and media. Each room is a Durable Object with an authoritative clock, presence and a storage alarm that advances the queue. Audio and artwork live in Workers KV, chunked so Range requests and seeking stay instant.
+One Worker routes rooms, uploads and media. Each room is a Durable Object with an authoritative clock, presence and a storage alarm that advances the queue. Uploaded audio and artwork live in Workers KV, chunked so Range requests and seeking stay instant; link tracks stay at their source and are fetched per device.
 
 <p align="center">
-  <img src="assets/architecture.svg" width="100%" alt="Browsers connect over WebSockets to a Durable Object per room; audio and art live in Workers KV and stream back over HTTP range requests">
+  <img src="assets/architecture.svg" width="100%" alt="Browsers connect over WebSockets to a Durable Object per room; uploaded audio and art live in Workers KV while links are fetched by each browser">
 </p>
 
 ## Run it

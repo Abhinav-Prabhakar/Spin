@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Playback, Track, TransportEvent } from '@shared/types';
-import { clamp, trackArtUrl, trackAudioUrl } from '../lib/media';
+import { analyzeAudioBlob } from '../lib/analyze';
+import {
+  LinkDownloadError,
+  LINK_DOWNLOAD_LIMIT,
+  downloadAudio,
+} from '../lib/link';
+import {
+  clamp,
+  isLinkTrack,
+  trackAudioUrl,
+  trackCoverUrl,
+} from '../lib/media';
 import {
   EQ_BANDS,
   clampGain,
@@ -18,15 +29,23 @@ interface AudioEngineOptions {
   offsetRef: { current: number };
   onTransport: (event: TransportEvent) => void;
   onEnded: (trackId: string) => void;
+  onMeta: (trackId: string, duration: number, peaks: number[]) => void;
+  onError: (message: string) => void;
 }
 
 export interface AudioEngine {
+  /** The media element routed through Web Audio, for uploads and CORS links. */
   audioRef: React.RefObject<HTMLAudioElement | null>;
+  /** A plain element for sources that refuse CORS, so they still play. */
+  plainAudioRef: React.RefObject<HTMLAudioElement | null>;
   blocked: boolean;
   buffering: boolean;
   duration: number;
   volume: number;
   muted: boolean;
+  sourceError: string | null;
+  /** False when the current source bypasses Web Audio (no CORS). */
+  eqAvailable: boolean;
   setVolume: (value: number) => void;
   toggleMute: () => void;
   retry: () => void;
@@ -47,8 +66,12 @@ interface Graph {
   data: Uint8Array<ArrayBuffer>;
 }
 
+type SourceMode = 'graph' | 'plain';
+
 const VOLUME_KEY = 'spin.volume';
 const MUTED_KEY = 'spin.muted';
+/** Keep a handful of decoded sources around; skip the one on screen. */
+const MAX_CACHED_BLOBS = 6;
 
 function storedVolume(): number {
   try {
@@ -83,6 +106,13 @@ function setTime(audio: HTMLAudioElement, seconds: number) {
   }
 }
 
+function unload(audio: HTMLAudioElement | null) {
+  if (!audio) return;
+  audio.pause();
+  audio.removeAttribute('src');
+  audio.load();
+}
+
 export function useAudioEngine({
   code,
   playback,
@@ -90,17 +120,24 @@ export function useAudioEngine({
   offsetRef,
   onTransport,
   onEnded,
+  onMeta,
+  onError,
 }: AudioEngineOptions): AudioEngine {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const plainAudioRef = useRef<HTMLAudioElement | null>(null);
   const playbackRef = useRef<Playback | null>(playback);
   const tracksRef = useRef<Track[]>(tracks);
   const transportRef = useRef(onTransport);
   const endedRef = useRef(onEnded);
+  const metaRef = useRef(onMeta);
+  const errorRef = useRef(onError);
 
   playbackRef.current = playback;
   tracksRef.current = tracks;
   transportRef.current = onTransport;
   endedRef.current = onEnded;
+  metaRef.current = onMeta;
+  errorRef.current = onError;
 
   const [blocked, setBlocked] = useState(false);
   const blockedRef = useRef(false);
@@ -109,15 +146,29 @@ export function useAudioEngine({
   const [volume, setVolumeState] = useState(storedVolume);
   const [muted, setMuted] = useState(storedMuted);
   const [eq, setEq] = useState<EqState>(readEq);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [sourceMode, setSourceMode] = useState<SourceMode>('graph');
   const eqRef = useRef(eq);
   eqRef.current = eq;
+  const sourceErrorRef = useRef<string | null>(null);
+  sourceErrorRef.current = sourceError;
 
+  const activeRef = useRef<SourceMode>('graph');
+  const graphAllowedRef = useRef(true);
   const loadedTrackRef = useRef<string | null>(null);
   const loadTokenRef = useRef(0);
+  const startedTokenRef = useRef(-1);
   const playAttemptRef = useRef(false);
   const lastLocalSeekRef = useRef<{ at: number; position: number }>({ at: 0, position: 0 });
   const graphRef = useRef<Graph | null>(null);
   const graphBootRef = useRef<Promise<void> | null>(null);
+  const blobUrlsRef = useRef(new Map<string, string>());
+  const metaSentRef = useRef(new Map<string, { duration: boolean; peaks: boolean }>());
+  const loadAbortRef = useRef<AbortController | null>(null);
+
+  const activeAudio = useCallback((): HTMLAudioElement | null => {
+    return activeRef.current === 'plain' ? plainAudioRef.current : audioRef.current;
+  }, []);
 
   const currentTrack = playback?.trackId
     ? tracks.find((track) => track.id === playback.trackId) ?? null
@@ -126,6 +177,20 @@ export function useAudioEngine({
   const trackDuration = useCallback((trackId: string | null): number => {
     if (!trackId) return 0;
     return tracksRef.current.find((track) => track.id === trackId)?.duration ?? 0;
+  }, []);
+
+  /** Report duration and peaks once per track; the room keeps the first copy. */
+  const reportMeta = useCallback((trackId: string, nextDuration: number, peaks: number[]) => {
+    const sent = metaSentRef.current.get(trackId) ?? { duration: false, peaks: false };
+    const sendDuration =
+      !sent.duration && Number.isFinite(nextDuration) && nextDuration > 0;
+    const sendPeaks = !sent.peaks && peaks.length > 0;
+    if (!sendDuration && !sendPeaks) return;
+
+    sent.duration ||= sendDuration;
+    sent.peaks ||= sendPeaks;
+    metaSentRef.current.set(trackId, sent);
+    metaRef.current(trackId, sendDuration ? nextDuration : 0, sendPeaks ? peaks : []);
   }, []);
 
   const applyEqGains = useCallback((state: EqState) => {
@@ -137,7 +202,7 @@ export function useAudioEngine({
   }, []);
 
   const warm = useCallback(async () => {
-    if (!audioRef.current) return;
+    if (!graphAllowedRef.current || !audioRef.current) return;
     const existing = graphRef.current;
     if (existing) {
       if (existing.ctx.state === 'suspended') {
@@ -209,7 +274,7 @@ export function useAudioEngine({
   }, [applyEqGains]);
 
   const attemptPlay = useCallback(async () => {
-    const audio = audioRef.current;
+    const audio = activeAudio();
     if (!audio || !audio.src || blockedRef.current) return;
     if (!audio.paused) return;
     if (playAttemptRef.current) return;
@@ -217,19 +282,154 @@ export function useAudioEngine({
     try {
       await audio.play();
       setBuffering(false);
+      setSourceError(null);
     } catch (err) {
       const name = err instanceof DOMException ? err.name : '';
       if (name === 'NotAllowedError') {
         blockedRef.current = true;
         setBlocked(true);
+      } else if (name === 'NotSupportedError') {
+        setBuffering(false);
+        setSourceError("This browser can't play that source.");
       }
     } finally {
       playAttemptRef.current = false;
     }
+  }, [activeAudio]);
+
+  const beginPlayback = useCallback(
+    (token: number) => {
+      const audio = activeAudio();
+      const state = playbackRef.current;
+      if (!audio || token !== loadTokenRef.current || !state?.trackId) return;
+      if (loadedTrackRef.current !== state.trackId) return;
+      if (audio.readyState < 1 || !audio.src) return;
+      if (startedTokenRef.current === token) return;
+      startedTokenRef.current = token;
+
+      setBuffering(false);
+      setSourceError(null);
+
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        setDuration(audio.duration);
+        reportMeta(state.trackId, audio.duration, []);
+      }
+
+      const max =
+        Number.isFinite(audio.duration) && audio.duration > 0
+          ? audio.duration
+          : trackDuration(state.trackId);
+      const target = clamp(
+        targetSeconds(state, offsetRef.current),
+        0,
+        max > 0 ? max : Number.MAX_SAFE_INTEGER,
+      );
+      setTime(audio, target);
+      if (state.playing) void attemptPlay();
+    },
+    [activeAudio, attemptPlay, offsetRef, reportMeta, trackDuration],
+  );
+
+  const useGraphElement = useCallback((): HTMLAudioElement | null => {
+    activeRef.current = 'graph';
+    graphAllowedRef.current = true;
+    setSourceMode('graph');
+    unload(plainAudioRef.current);
+    void warm();
+    return audioRef.current;
+  }, [warm]);
+
+  const usePlainElement = useCallback((): HTMLAudioElement | null => {
+    activeRef.current = 'plain';
+    graphAllowedRef.current = false;
+    setSourceMode('plain');
+    unload(audioRef.current);
+    return plainAudioRef.current;
   }, []);
 
+  const rememberBlob = useCallback((trackId: string, url: string) => {
+    const cache = blobUrlsRef.current;
+    if (cache.has(trackId)) {
+      URL.revokeObjectURL(url);
+      return;
+    }
+    cache.set(trackId, url);
+    while (cache.size > MAX_CACHED_BLOBS) {
+      let removed = false;
+      for (const [key, value] of cache) {
+        if (key === loadedTrackRef.current) continue;
+        cache.delete(key);
+        URL.revokeObjectURL(value);
+        removed = true;
+        break;
+      }
+      if (!removed) break;
+    }
+  }, []);
+
+  const loadLinkTrack = useCallback(
+    async (track: Track, token: number) => {
+      if (!track.srcUrl) return;
+      setBuffering(true);
+      setSourceError(null);
+
+      const cached = blobUrlsRef.current.get(track.id);
+      if (cached) {
+        const audio = useGraphElement();
+        if (!audio) return;
+        audio.src = cached;
+        audio.load();
+        startedTokenRef.current = -1;
+        setDuration(track.duration);
+        return;
+      }
+
+      const controller = new AbortController();
+      loadAbortRef.current = controller;
+
+      try {
+        const blob = await downloadAudio(track.srcUrl, {
+          signal: controller.signal,
+          maxBytes: LINK_DOWNLOAD_LIMIT,
+        });
+        if (token !== loadTokenRef.current) return;
+
+        const url = URL.createObjectURL(blob);
+        rememberBlob(track.id, url);
+
+        const audio = useGraphElement();
+        if (!audio) return;
+        audio.src = url;
+        audio.load();
+        startedTokenRef.current = -1;
+        setDuration(track.duration);
+
+        // Playback starts from the blob immediately; the waveform follows.
+        void analyzeAudioBlob(blob).then((fingerprint) => {
+          if (token !== loadTokenRef.current) return;
+          if (fingerprint.duration > 0) setDuration(fingerprint.duration);
+          reportMeta(track.id, fingerprint.duration, fingerprint.peaks);
+        });
+      } catch (err) {
+        if (token !== loadTokenRef.current) return;
+        if (err instanceof LinkDownloadError && err.code === 'aborted') return;
+
+        // A too-large response already proved CORS works, so keep the graph.
+        // Anything else (often a missing CORS header) plays from a plain element.
+        const corsWorked = err instanceof LinkDownloadError && err.code === 'too-large';
+        const audio = corsWorked ? useGraphElement() : usePlainElement();
+        if (!audio) return;
+        audio.src = track.srcUrl;
+        audio.load();
+        startedTokenRef.current = -1;
+        setDuration(track.duration);
+      }
+    },
+    [rememberBlob, reportMeta, useGraphElement, usePlainElement],
+  );
+
   const reconcile = useCallback(() => {
-    const audio = audioRef.current;
+    const audio = activeAudio();
     const state = playbackRef.current;
     if (!audio) return;
 
@@ -239,7 +439,7 @@ export function useAudioEngine({
       return;
     }
     if (loadedTrackRef.current !== state.trackId) return;
-    if (audio.readyState < 1) return;
+    if (audio.readyState < 1 || !audio.src) return;
 
     const mediaDuration =
       Number.isFinite(audio.duration) && audio.duration > 0
@@ -277,30 +477,51 @@ export function useAudioEngine({
       audio.playbackRate = 1;
       if (Math.abs(audio.currentTime - target) > 0.09) setTime(audio, target);
     }
-  }, [attemptPlay, offsetRef, trackDuration]);
+  }, [activeAudio, attemptPlay, offsetRef, trackDuration]);
 
   const seek = useCallback(
     (seconds: number) => {
-      const audio = audioRef.current;
+      const audio = activeAudio();
       const state = playbackRef.current;
       if (!audio || !state?.trackId) return;
-      const max = Number.isFinite(audio.duration) && audio.duration > 0
-        ? audio.duration
-        : trackDuration(state.trackId);
+      const max =
+        Number.isFinite(audio.duration) && audio.duration > 0
+          ? audio.duration
+          : trackDuration(state.trackId);
       const next = clamp(seconds, 0, max > 0 ? max : seconds);
       lastLocalSeekRef.current = { at: Date.now(), position: next };
       setTime(audio, next);
       if (state.playing) void attemptPlay();
       transportRef.current({ action: 'seek', position: next });
     },
-    [attemptPlay, trackDuration],
+    [activeAudio, attemptPlay, trackDuration],
   );
 
   const retry = useCallback(() => {
     blockedRef.current = false;
     setBlocked(false);
+
+    const state = playbackRef.current;
+    const track = state?.trackId
+      ? tracksRef.current.find((item) => item.id === state.trackId)
+      : null;
+    if (sourceErrorRef.current && track && isLinkTrack(track) && track.srcUrl) {
+      loadAbortRef.current?.abort();
+      loadAbortRef.current = null;
+      const token = ++loadTokenRef.current;
+      loadedTrackRef.current = track.id;
+      startedTokenRef.current = -1;
+      setSourceError(null);
+      setBuffering(true);
+      unload(audioRef.current);
+      unload(plainAudioRef.current);
+      void loadLinkTrack(track, token);
+      return;
+    }
+
+    setSourceError(null);
     void warm().then(() => attemptPlay());
-  }, [attemptPlay, warm]);
+  }, [attemptPlay, loadLinkTrack, warm]);
 
   const setVolume = useCallback((value: number) => {
     const next = clamp(value, 0, 1);
@@ -357,7 +578,7 @@ export function useAudioEngine({
 
   const getProgress = useCallback((): number => {
     const state = playbackRef.current;
-    const audio = audioRef.current;
+    const audio = activeAudio();
     if (!state?.trackId) return 0;
     if (blockedRef.current || !audio || audio.readyState < 1) {
       return targetSeconds(state, offsetRef.current);
@@ -366,43 +587,49 @@ export function useAudioEngine({
       return state.position;
     }
     return audio.currentTime;
-  }, [offsetRef]);
+  }, [activeAudio, offsetRef]);
 
-  const getLevels = useCallback((bands: number): number[] | null => {
-    const graph = graphRef.current;
-    if (!graph || graph.ctx.state !== 'running') return null;
-    graph.analyser.getByteFrequencyData(graph.data);
-    const count = Math.max(2, Math.floor(bands));
-    const binCount = graph.data.length;
-    const minBin = 1;
-    const maxBin = Math.max(8, Math.floor(binCount * 0.72));
-    const ratio = maxBin / minBin;
-    const levels: number[] = [];
-    for (let i = 0; i < count; i++) {
-      const start = Math.floor(minBin * Math.pow(ratio, i / count));
-      const end = Math.max(start + 1, Math.floor(minBin * Math.pow(ratio, (i + 1) / count)));
-      let sum = 0;
-      for (let j = start; j < end && j < binCount; j++) sum += graph.data[j] ?? 0;
-      const average = sum / Math.max(1, end - start) / 255;
-      levels.push(clamp(Math.pow(average * 1.6, 0.72), 0, 1));
-    }
-    return levels;
-  }, []);
+  const getLevels = useCallback(
+    (bands: number): number[] | null => {
+      if (activeRef.current !== 'graph') return null;
+      const graph = graphRef.current;
+      if (!graph || graph.ctx.state !== 'running') return null;
+      graph.analyser.getByteFrequencyData(graph.data);
+      const count = Math.max(2, Math.floor(bands));
+      const binCount = graph.data.length;
+      const minBin = 1;
+      const maxBin = Math.max(8, Math.floor(binCount * 0.72));
+      const ratio = maxBin / minBin;
+      const levels: number[] = [];
+      for (let i = 0; i < count; i++) {
+        const start = Math.floor(minBin * Math.pow(ratio, i / count));
+        const end = Math.max(start + 1, Math.floor(minBin * Math.pow(ratio, (i + 1) / count)));
+        let sum = 0;
+        for (let j = start; j < end && j < binCount; j++) sum += graph.data[j] ?? 0;
+        const average = sum / Math.max(1, end - start) / 255;
+        levels.push(clamp(Math.pow(average * 1.6, 0.72), 0, 1));
+      }
+      return levels;
+    },
+    [],
+  );
 
   // Load a newly selected track.
   useEffect(() => {
-    const audio = audioRef.current;
     const state = playbackRef.current;
-    if (!audio) return;
-
+    if (!audioRef.current || !plainAudioRef.current) return;
     if (!state?.trackId) {
+      loadAbortRef.current?.abort();
+      loadAbortRef.current = null;
       loadTokenRef.current++;
       loadedTrackRef.current = null;
-      audio.pause();
-      audio.removeAttribute('src');
-      audio.load();
+      startedTokenRef.current = -1;
+      unload(audioRef.current);
+      unload(plainAudioRef.current);
       setDuration(0);
       setBuffering(false);
+      setSourceError(null);
+      setSourceMode('graph');
       blockedRef.current = false;
       setBlocked(false);
       return;
@@ -412,32 +639,33 @@ export function useAudioEngine({
     const track = tracksRef.current.find((item) => item.id === state.trackId);
     if (!track) return;
 
+    loadAbortRef.current?.abort();
+    loadAbortRef.current = null;
     loadedTrackRef.current = track.id;
     const token = ++loadTokenRef.current;
+    startedTokenRef.current = -1;
     blockedRef.current = false;
     setBlocked(false);
+    setSourceError(null);
     setBuffering(true);
     setDuration(track.duration);
+
+    unload(audioRef.current);
+    unload(plainAudioRef.current);
+
+    if (isLinkTrack(track) && track.srcUrl) {
+      void loadLinkTrack(track, token);
+      return;
+    }
+
+    activeRef.current = 'graph';
+    graphAllowedRef.current = true;
+    setSourceMode('graph');
+    const audio = audioRef.current;
     audio.src = trackAudioUrl(code, track.id);
     audio.load();
-
-    const applyStart = () => {
-      if (token !== loadTokenRef.current) return;
-      setBuffering(false);
-      if (Number.isFinite(audio.duration) && audio.duration > 0) setDuration(audio.duration);
-      const current = playbackRef.current;
-      if (!current || current.trackId !== track.id) return;
-      const max = Number.isFinite(audio.duration) && audio.duration > 0
-        ? audio.duration
-        : track.duration;
-      const target = clamp(targetSeconds(current, offsetRef.current), 0, max > 0 ? max : Number.MAX_SAFE_INTEGER);
-      setTime(audio, target);
-      if (current.playing) void attemptPlay();
-    };
-
-    audio.addEventListener('loadedmetadata', applyStart, { once: true });
-    audio.addEventListener('canplay', applyStart, { once: true });
-  }, [playback?.trackId, tracks, code, attemptPlay, offsetRef]);
+    void warm();
+  }, [playback?.trackId, tracks, code, loadLinkTrack, warm]);
 
   // Reconcile on every room event and once a second.
   useEffect(() => {
@@ -458,8 +686,8 @@ export function useAudioEngine({
 
   // Volume, muting, and persistence.
   useEffect(() => {
-    const audio = audioRef.current;
-    if (audio) {
+    for (const audio of [audioRef.current, plainAudioRef.current]) {
+      if (!audio) continue;
       audio.volume = volume;
       audio.muted = muted;
     }
@@ -471,48 +699,98 @@ export function useAudioEngine({
     }
   }, [volume, muted]);
 
-  // Element lifecycle events.
+  // Element lifecycle events. Inactive elements are ignored while switching.
+  // The elements mount only once the room is ready, so this runs on every
+  // render and re-binds them as soon as they appear.
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+    const elements = [audioRef.current, plainAudioRef.current].filter(
+      (element): element is HTMLAudioElement => Boolean(element),
+    );
+    if (elements.length === 0) return;
 
-    const onWaiting = () => {
+    const isActive = (element: HTMLAudioElement) => element === activeAudio();
+
+    const onLoaded = (event: Event) => {
+      const audio = event.currentTarget as HTMLAudioElement;
+      if (!isActive(audio)) return;
+      beginPlayback(loadTokenRef.current);
+    };
+    const onWaiting = (event: Event) => {
+      const audio = event.currentTarget as HTMLAudioElement;
+      if (!isActive(audio)) return;
       if (playbackRef.current?.playing && !blockedRef.current) setBuffering(true);
     };
-    const onPlaying = () => {
+    const onPlaying = (event: Event) => {
+      const audio = event.currentTarget as HTMLAudioElement;
+      if (!isActive(audio)) return;
       setBuffering(false);
+      setSourceError(null);
       blockedRef.current = false;
       setBlocked(false);
       audio.playbackRate = 1;
     };
-    const onPause = () => setBuffering(false);
-    const onDuration = () => {
-      if (Number.isFinite(audio.duration) && audio.duration > 0) setDuration(audio.duration);
+    const onPause = (event: Event) => {
+      const audio = event.currentTarget as HTMLAudioElement;
+      if (!isActive(audio)) return;
+      setBuffering(false);
     };
-    const onEnded = () => {
+    const onDuration = (event: Event) => {
+      const audio = event.currentTarget as HTMLAudioElement;
+      if (!isActive(audio)) return;
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        setDuration(audio.duration);
+        const trackId = loadedTrackRef.current;
+        if (trackId) reportMeta(trackId, audio.duration, []);
+      }
+    };
+    const onEnded = (event: Event) => {
+      const audio = event.currentTarget as HTMLAudioElement;
+      if (!isActive(audio)) return;
       const state = playbackRef.current;
       if (!state?.trackId || !state.playing) return;
       if (loadedTrackRef.current !== state.trackId) return;
       endedRef.current(state.trackId);
     };
-
-    audio.addEventListener('waiting', onWaiting);
-    audio.addEventListener('stalled', onWaiting);
-    audio.addEventListener('playing', onPlaying);
-    audio.addEventListener('pause', onPause);
-    audio.addEventListener('durationchange', onDuration);
-    audio.addEventListener('loadedmetadata', onDuration);
-    audio.addEventListener('ended', onEnded);
-    return () => {
-      audio.removeEventListener('waiting', onWaiting);
-      audio.removeEventListener('stalled', onWaiting);
-      audio.removeEventListener('playing', onPlaying);
-      audio.removeEventListener('pause', onPause);
-      audio.removeEventListener('durationchange', onDuration);
-      audio.removeEventListener('loadedmetadata', onDuration);
-      audio.removeEventListener('ended', onEnded);
+    const onError = (event: Event) => {
+      const audio = event.currentTarget as HTMLAudioElement;
+      if (!isActive(audio) || !audio.src) return;
+      setBuffering(false);
+      const message =
+        audio.error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
+          ? "This browser can't play that source."
+          : "That source wouldn't play. Try another link.";
+      setSourceError(message);
+      errorRef.current(message);
     };
-  }, []);
+
+    for (const audio of elements) {
+      audio.addEventListener('loadedmetadata', onLoaded);
+      audio.addEventListener('canplay', onLoaded);
+      audio.addEventListener('waiting', onWaiting);
+      audio.addEventListener('stalled', onWaiting);
+      audio.addEventListener('playing', onPlaying);
+      audio.addEventListener('pause', onPause);
+      audio.addEventListener('durationchange', onDuration);
+      audio.addEventListener('loadedmetadata', onDuration);
+      audio.addEventListener('ended', onEnded);
+      audio.addEventListener('error', onError);
+    }
+
+    return () => {
+      for (const audio of elements) {
+        audio.removeEventListener('loadedmetadata', onLoaded);
+        audio.removeEventListener('canplay', onLoaded);
+        audio.removeEventListener('waiting', onWaiting);
+        audio.removeEventListener('stalled', onWaiting);
+        audio.removeEventListener('playing', onPlaying);
+        audio.removeEventListener('pause', onPause);
+        audio.removeEventListener('durationchange', onDuration);
+        audio.removeEventListener('loadedmetadata', onDuration);
+        audio.removeEventListener('ended', onEnded);
+        audio.removeEventListener('error', onError);
+      }
+    };
+  });
 
   // Build the analyser only from a real gesture, so browsers can't silently
   // route playback into a suspended audio context.
@@ -530,9 +808,12 @@ export function useAudioEngine({
 
   useEffect(() => {
     return () => {
+      loadAbortRef.current?.abort();
       const graph = graphRef.current;
       graphRef.current = null;
       if (graph) void graph.ctx.close().catch(() => {});
+      for (const url of blobUrlsRef.current.values()) URL.revokeObjectURL(url);
+      blobUrlsRef.current.clear();
     };
   }, []);
 
@@ -596,10 +877,9 @@ export function useAudioEngine({
       navigator.mediaSession.metadata = null;
       return;
     }
-    const artwork: MediaImage[] = currentTrack.hasArt
-      ? [
-          { src: trackArtUrl(code, currentTrack.id), sizes: '640x640', type: 'image/jpeg' },
-        ]
+    const cover = trackCoverUrl(currentTrack, code);
+    const artwork: MediaImage[] = cover
+      ? [{ src: cover, sizes: '640x640', type: 'image/jpeg' }]
       : [];
     navigator.mediaSession.metadata = new MediaMetadata({
       title: currentTrack.title,
@@ -617,7 +897,7 @@ export function useAudioEngine({
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
     const timer = window.setInterval(() => {
-      const audio = audioRef.current;
+      const audio = activeAudio();
       const mediaDuration =
         Number.isFinite(audio?.duration) && (audio?.duration ?? 0) > 0
           ? audio?.duration ?? 0
@@ -634,15 +914,18 @@ export function useAudioEngine({
       }
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [duration]);
+  }, [activeAudio, duration]);
 
   return {
     audioRef,
+    plainAudioRef,
     blocked,
     buffering,
     duration,
     volume,
     muted,
+    sourceError,
+    eqAvailable: sourceMode === 'graph',
     setVolume,
     toggleMute,
     retry,

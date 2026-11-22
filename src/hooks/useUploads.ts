@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { analyzeAudioFile } from '../lib/analyze';
 import { apiUrl } from '../lib/api';
+import { normalizeUrlInput } from '../lib/link';
+
+export type UploadState = 'resolving' | 'analyzing' | 'uploading' | 'done' | 'error' | 'cancelled';
 
 export interface UploadItem {
   id: string;
   name: string;
   size: number;
   progress: number;
-  state: 'analyzing' | 'uploading' | 'done' | 'error' | 'cancelled';
+  state: UploadState;
+  kind: 'file' | 'link';
   error?: string;
 }
 
@@ -19,6 +23,7 @@ interface Entry {
 interface AbortFlag {
   cancelled: boolean;
   xhr?: XMLHttpRequest;
+  controller?: AbortController;
 }
 
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -37,6 +42,17 @@ function newId(): string {
 function looksLikeAudio(file: File): boolean {
   const name = file.name.toLowerCase();
   return file.type.startsWith('audio/') || AUDIO_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+function linkLabel(raw: string): string {
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.replace(/^www\./, '');
+    const path = url.pathname === '/' ? '' : decodeURIComponent(url.pathname);
+    return `${host}${path}`.slice(0, 90);
+  } catch {
+    return raw.slice(0, 90);
+  }
 }
 
 export function useUploads(
@@ -59,6 +75,7 @@ export function useUploads(
       for (const flag of current.values()) {
         flag.cancelled = true;
         flag.xhr?.abort();
+        flag.controller?.abort();
       }
       current.clear();
     };
@@ -83,6 +100,7 @@ export function useUploads(
     if (flag) {
       flag.cancelled = true;
       flag.xhr?.abort();
+      flag.controller?.abort();
     }
     aborts.current.delete(id);
     setItems((prev) => prev.filter((item) => item.id !== id));
@@ -136,6 +154,40 @@ export function useUploads(
     [code, patch, removeLater, socketId],
   );
 
+  const importLink = useCallback(
+    async (id: string, url: string) => {
+      const flag = aborts.current.get(id);
+      if (!flag || flag.cancelled) return;
+      flag.controller = new AbortController();
+
+      try {
+        const response = await fetch(apiUrl(`/api/rooms/${encodeURIComponent(code)}/link`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, ...(socketId ? { sid: socketId } : {}) }),
+          signal: flag.controller.signal,
+        });
+
+        const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        if (!response.ok) {
+          throw new Error(body?.error || 'Could not add that link.');
+        }
+        if (flag.cancelled || !mounted.current) return;
+
+        patch(id, { state: 'done', progress: 1 });
+        removeLater(id, 1400);
+      } catch (err) {
+        if (flag.cancelled || !mounted.current) return;
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        const message = err instanceof Error ? err.message : 'Could not add that link.';
+        patch(id, { state: 'error', error: message });
+        onToast(message);
+        removeLater(id, 6500);
+      }
+    },
+    [code, mounted, onToast, patch, removeLater, socketId],
+  );
+
   const addFiles = useCallback(
     (files: File[]) => {
       if (files.length === 0) return;
@@ -150,7 +202,14 @@ export function useUploads(
         const id = newId();
         accepted.push({
           file,
-          item: { id, name: file.name, size: file.size, progress: 0, state: 'analyzing' },
+          item: {
+            id,
+            name: file.name,
+            size: file.size,
+            progress: 0,
+            state: 'analyzing',
+            kind: 'file',
+          },
         });
         aborts.current.set(id, { cancelled: false });
       }
@@ -190,5 +249,33 @@ export function useUploads(
     [onToast, patch, removeLater, uploadOne],
   );
 
-  return { items, addFiles, cancel };
+  /** Returns false when the value is not a usable link. */
+  const addLink = useCallback(
+    (raw: string): boolean => {
+      const url = normalizeUrlInput(raw);
+      if (!url) {
+        onToast("That doesn't look like a link.");
+        return false;
+      }
+
+      const id = newId();
+      aborts.current.set(id, { cancelled: false });
+      setItems((prev) => [
+        ...prev,
+        {
+          id,
+          name: linkLabel(url),
+          size: 0,
+          progress: 0,
+          state: 'resolving',
+          kind: 'link',
+        },
+      ]);
+      void importLink(id, url);
+      return true;
+    },
+    [importLink, onToast],
+  );
+
+  return { items, addFiles, addLink, cancel };
 }

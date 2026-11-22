@@ -13,6 +13,8 @@ import {
 interface EqualizerProps {
   open: boolean;
   eq: EqState;
+  /** Non-CORS sources bypass Web Audio, so the curve cannot be applied. */
+  available?: boolean;
   onClose: () => void;
   onEnabled: (enabled: boolean) => void;
   onBand: (index: number, gain: number) => void;
@@ -39,7 +41,15 @@ function curvePath(points: Array<readonly [number, number]>): string {
     .join(' ');
 }
 
-export function Equalizer({ open, eq, onClose, onEnabled, onBand, onPreset }: EqualizerProps) {
+export function Equalizer({
+  open,
+  eq,
+  available = true,
+  onClose,
+  onEnabled,
+  onBand,
+  onPreset,
+}: EqualizerProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
@@ -77,7 +87,7 @@ export function Equalizer({ open, eq, onClose, onEnabled, onBand, onPreset }: Eq
         >
           <motion.div
             ref={panelRef}
-            className={`eq-panel ${eq.enabled ? 'is-on' : 'is-off'}`}
+            className={`eq-panel ${eq.enabled ? 'is-on' : 'is-off'} ${available ? '' : 'is-unavailable'}`}
             role="dialog"
             aria-modal="true"
             aria-label="Equalizer"
@@ -97,8 +107,9 @@ export function Equalizer({ open, eq, onClose, onEnabled, onBand, onPreset }: Eq
                   className={`eq-toggle ${eq.enabled ? 'is-on' : ''}`}
                   onClick={() => onEnabled(!eq.enabled)}
                   role="switch"
-                  aria-checked={eq.enabled}
+                  aria-checked={eq.enabled && available}
                   aria-label="Equalizer on"
+                  disabled={!available}
                 >
                   <span className="eq-toggle-knob" />
                 </button>
@@ -122,6 +133,7 @@ export function Equalizer({ open, eq, onClose, onEnabled, onBand, onPreset }: Eq
                   className={`eq-preset ${eq.preset === preset.id ? 'is-active' : ''}`}
                   onClick={() => onPreset(preset.id)}
                   aria-pressed={eq.preset === preset.id}
+                  disabled={!available}
                 >
                   {preset.name}
                 </button>
@@ -193,6 +205,7 @@ export function Equalizer({ open, eq, onClose, onEnabled, onBand, onPreset }: Eq
                       value={gain}
                       onChange={(event) => onBand(index, Number(event.target.value))}
                       aria-label={`${band.label} hertz`}
+                      disabled={!available}
                       style={
                         {
                           '--eq-a': `${Math.min(fill, 50)}%`,
@@ -210,13 +223,20 @@ export function Equalizer({ open, eq, onClose, onEnabled, onBand, onPreset }: Eq
 
             <footer className="eq-foot">
               <span className="eq-state">
-                {eq.enabled ? (eq.preset === 'custom' ? 'Custom curve' : `${presetName(eq.preset)} curve`) : 'Bypassed'}
+                {!available
+                  ? 'This source blocks the equalizer'
+                  : eq.enabled
+                    ? eq.preset === 'custom'
+                      ? 'Custom curve'
+                      : `${presetName(eq.preset)} curve`
+                    : 'Bypassed'}
               </span>
               <button
                 type="button"
                 className="eq-reset"
                 onClick={() => onPreset('flat')}
                 title="Reset to flat"
+                disabled={!available}
               >
                 <RotateCcw size={12} strokeWidth={2} />
                 <span>Reset</span>

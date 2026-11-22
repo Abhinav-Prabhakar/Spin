@@ -684,6 +684,24 @@ button.room-pill:hover {
   flex: none;
 }
 
+.track-source-error {
+  margin-top: 7px;
+  max-width: 420px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: #a25342;
+  text-align: center;
+}
+
+.track-source-error span {
+  color: #6f6f69;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .added-by {
   border-width: 1.5px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
@@ -1110,6 +1128,74 @@ button.room-pill:hover {
   letter-spacing: 0.02em;
 }
 
+.queue-link-toggle {
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: #96968f;
+  display: grid;
+  place-items: center;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.queue-link-toggle:hover,
+.queue-link-toggle.is-active {
+  background: #f1f1ee;
+  border-color: #e6e6e1;
+  color: #33332f;
+}
+
+.queue-link {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 7px 8px 7px 11px;
+  border: 1px solid #e6e6e1;
+  border-radius: 12px;
+  background: #fff;
+  color: #a2a29c;
+  overflow: hidden;
+}
+
+.queue-link-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 11.5px;
+  color: var(--ink);
+}
+
+.queue-link-input::placeholder {
+  color: #b0b0aa;
+}
+
+.queue-link-submit {
+  flex: none;
+  height: 25px;
+  padding: 0 11px;
+  border: none;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 550;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.queue-link-submit:disabled {
+  opacity: 0.28;
+}
+
+.queue-link-submit:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
 .queue-add {
   width: 32px;
   height: 32px;
@@ -1507,9 +1593,29 @@ button.room-pill:hover {
   transition: background 0.2s, border-color 0.2s;
 }
 
-.queue-empty:hover {
-  background: #f7f7f4;
-  border-color: #ccccc5;
+.queue-empty-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.queue-empty-action {
+  height: 29px;
+  padding: 0 13px;
+  border: 1px solid #e2e2dc;
+  border-radius: 999px;
+  background: #fff;
+  color: #4b4b46;
+  font-size: 10.5px;
+  font-weight: 520;
+  transition: background 0.18s, border-color 0.18s, color 0.18s;
+}
+
+.queue-empty-action:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
 }
 
 .queue-empty-icon {
@@ -1634,8 +1740,13 @@ button.room-pill:hover {
   transition: width 0.22s linear;
 }
 
-.upload-item.is-analyzing .upload-fill {
+.upload-item.is-analyzing .upload-fill,
+.upload-item.is-resolving .upload-fill {
   animation: load-pulse 1.4s ease-in-out infinite;
+}
+
+.upload-item.is-resolving .upload-art {
+  color: #55554f;
 }
 
 .upload-item.is-error .upload-fill {
@@ -1648,7 +1759,7 @@ button.room-pill:hover {
 
 .upload-state {
   flex: none;
-  width: 28px;
+  width: 34px;
   text-align: right;
   font-size: 9.5px;
   color: #a2a29c;
@@ -2629,6 +2740,22 @@ button.room-pill:hover {
 
 .eq-panel.is-off .eq-bands {
   opacity: 0.52;
+}
+
+.eq-panel.is-unavailable .eq-curve {
+  color: #b4b4ae;
+}
+
+.eq-panel.is-unavailable .eq-bands {
+  opacity: 0.35;
+}
+
+.eq-toggle:disabled,
+.eq-preset:disabled,
+.eq-slider:disabled,
+.eq-reset:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .eq-band {

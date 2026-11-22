@@ -1,3 +1,4 @@
+import type { Track } from '@shared/types';
 import { apiUrl, appPath, BASE_PATH } from './api';
 
 export function clamp(value: number, min: number, max: number) {
@@ -20,6 +21,14 @@ export function trackAudioUrl(code: string, trackId: string): string {
 
 export function trackArtUrl(code: string, trackId: string): string {
   return apiUrl(`/media/${encodeURIComponent(code)}/${encodeURIComponent(trackId)}/art`);
+}
+
+export function trackCoverUrl(track: Track, code: string): string | null {
+  return track.artUrl || (track.hasArt ? trackArtUrl(code, track.id) : null);
+}
+
+export function isLinkTrack(track: Track | null | undefined): boolean {
+  return track?.origin === 'link' || track?.origin === 'youtube';
 }
 
 export function inviteUrl(code: string): string {

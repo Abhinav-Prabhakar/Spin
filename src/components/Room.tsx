@@ -54,6 +54,8 @@ export function Room({ code, onHome }: RoomProps) {
     offsetRef: room.offsetRef,
     onTransport: room.send,
     onEnded: room.playerEnded,
+    onMeta: room.reportMeta,
+    onError: toast,
   });
 
   const currentTrack = room.playback?.trackId
@@ -311,12 +313,14 @@ export function Room({ code, onHome }: RoomProps) {
           onRemove={room.removeTrack}
           onReorder={room.reorder}
           onPick={openPicker}
+          onAddLink={uploads.addLink}
         />
       </main>
 
       <Equalizer
         open={eqOpen}
         eq={engine.eq}
+        available={engine.eqAvailable}
         onClose={() => setEqOpen(false)}
         onEnabled={engine.setEqEnabled}
         onBand={engine.setEqBand}
@@ -324,6 +328,7 @@ export function Room({ code, onHome }: RoomProps) {
       />
 
       <audio ref={engine.audioRef} preload="auto" playsInline crossOrigin="anonymous" />
+      <audio ref={engine.plainAudioRef} preload="auto" playsInline />
 
       <UploadTray items={uploads.items} onCancel={uploads.cancel} />
       <Hearts reactions={room.reactions} />
@@ -356,7 +361,7 @@ export function Room({ code, onHome }: RoomProps) {
                 <CloudUpload size={30} strokeWidth={1.5} />
               </span>
               <span className="drop-title">Drop to share</span>
-              <span className="drop-sub">mp3 · wav · m4a</span>
+              <span className="drop-sub">mp3 · wav · m4a — or paste a link</span>
             </div>
           </motion.div>
         )}

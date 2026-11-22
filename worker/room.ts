@@ -195,6 +195,9 @@ export class RoomDO extends DurableObject<Env> {
       case 'remove':
         await this.remove(typeof message.id === 'string' ? message.id : '');
         break;
+      case 'meta':
+        await this.applyMeta(message);
+        break;
       case 'reaction': {
         const reaction: Reaction = {
           id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
@@ -466,6 +469,49 @@ export class RoomDO extends DurableObject<Env> {
     await this.schedule();
   }
 
+  /**
+   * Link tracks are fetched by each listener, so duration and peaks arrive
+   * from whichever browser finished decoding first. Accept them exactly once.
+   */
+  private async applyMeta(
+    message: Extract<ClientMessage, { t: 'meta' }>,
+  ): Promise<void> {
+    const track = this.tracks.get(message.id);
+    if (!track) return;
+    if (!track.origin || track.origin === 'upload') return;
+
+    let changed = false;
+    const duration = Number(message.duration);
+    if (
+      Number.isFinite(duration) &&
+      duration > 0 &&
+      duration < 24 * 60 * 60 &&
+      track.duration <= 0
+    ) {
+      track.duration = Math.round(duration * 1000) / 1000;
+      changed = true;
+    }
+
+    if (Array.isArray(message.peaks) && track.peaks.length === 0) {
+      const peaks = message.peaks
+        .slice(0, 400)
+        .map((value) =>
+          typeof value === 'number' && Number.isFinite(value)
+            ? Math.round(Math.max(0, Math.min(1, value)) * 1000) / 1000
+            : 0,
+        );
+      if (peaks.some((value) => value > 0)) {
+        track.peaks = peaks;
+        changed = true;
+      }
+    }
+
+    if (!changed) return;
+    await this.ctx.storage.put(`track:${track.id}`, track);
+    this.broadcast({ t: 'tracks', tracks: this.publicTracks() });
+    if (this.pb.trackId === track.id) await this.schedule();
+  }
+
   private async reorder(ids: string[]): Promise<void> {
     if (ids.length !== this.order.length) return;
     const unique = new Set(ids);
@@ -481,6 +527,7 @@ export class RoomDO extends DurableObject<Env> {
     const index = this.order.indexOf(id);
     if (index === -1) return;
 
+    const track = this.tracks.get(id);
     this.order.splice(index, 1);
     this.tracks.delete(id);
     await this.ctx.storage.delete(`track:${id}`);
@@ -502,7 +549,6 @@ export class RoomDO extends DurableObject<Env> {
     await this.schedule();
 
     const code = this.meta?.code ?? '';
-    const track = this.tracks.get(id);
     const keys = [`meta/${code}/${id}`, `art/${code}/${id}`];
     for (let index = 0; index < (track?.chunks ?? 0); index++) {
       keys.push(`audio/${code}/${id}/${index}`);
@@ -635,9 +681,14 @@ export function toPublicTrack(track: StoredTrack): Track {
     artist: track.artist,
     album: track.album,
     duration: track.duration,
-    hasArt: Boolean(track.artExt),
+    hasArt: Boolean(track.artExt || track.artUrl),
     peaks: track.peaks,
     addedAt: track.addedAt,
     addedBy: track.addedBy,
+    origin: track.origin ?? 'upload',
+    srcUrl: track.srcUrl,
+    artUrl: track.artUrl,
+    provider: track.provider,
+    size: track.size ?? null,
   };
 }

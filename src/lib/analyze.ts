@@ -11,27 +11,28 @@ const BARS = 180;
  * Decode the file in the browser, so the rest of the room gets a real
  * waveform immediately and the server doesn't need a decoder.
  */
-export async function analyzeAudioFile(file: File): Promise<AudioFingerprint> {
-  const buffer = await file.arrayBuffer();
-  let duration = 0;
-
+export async function analyzeAudioBlob(blob: Blob): Promise<AudioFingerprint> {
   try {
+    const buffer = await blob.arrayBuffer();
     const Ctor: typeof AudioContext =
       window.AudioContext ??
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new Ctor();
     try {
-      const audio = await ctx.decodeAudioData(buffer.slice(0));
-      duration = audio.duration;
-      const peaks = computePeaks(audio, BARS);
-      return { peaks, duration };
+      const audio = await ctx.decodeAudioData(buffer);
+      return { peaks: computePeaks(audio, BARS), duration: audio.duration };
     } finally {
       void ctx.close();
     }
   } catch {
-    duration = await probeDuration(file);
-    return { peaks: [], duration };
+    return { peaks: [], duration: 0 };
   }
+}
+
+export async function analyzeAudioFile(file: File): Promise<AudioFingerprint> {
+  const fingerprint = await analyzeAudioBlob(file);
+  if (fingerprint.duration > 0) return fingerprint;
+  return { peaks: [], duration: await probeDuration(file) };
 }
 
 function computePeaks(audio: AudioBuffer, count: number): number[] {

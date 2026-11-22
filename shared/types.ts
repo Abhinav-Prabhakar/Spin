@@ -1,5 +1,8 @@
 export type RepeatMode = 'off' | 'all' | 'one';
 
+/** Where a track's audio comes from. Uploads live in KV; links stay at the source. */
+export type TrackOrigin = 'upload' | 'link' | 'youtube';
+
 export interface User {
   id: string;
   name: string;
@@ -21,6 +24,16 @@ export interface Track {
   peaks: number[];
   addedAt: number;
   addedBy: Identity | null;
+  /** Missing on rooms created before links existed; treat as `upload`. */
+  origin?: TrackOrigin;
+  /** Browser-fetchable audio URL for link and youtube tracks. */
+  srcUrl?: string;
+  /** Remote cover art for link and youtube tracks. */
+  artUrl?: string;
+  /** Human-readable source host, e.g. `youtube.com`. */
+  provider?: string;
+  /** Upstream byte size when the source reports it. */
+  size?: number | null;
 }
 
 export interface Playback {
@@ -80,6 +93,7 @@ export type ClientMessage =
   | { t: 'ended'; trackId: string }
   | { t: 'reorder'; ids: string[] }
   | { t: 'remove'; id: string }
+  | { t: 'meta'; id: string; duration: number; peaks: number[] }
   | { t: 'reaction' }
   | { t: 'clock'; id: number };
 

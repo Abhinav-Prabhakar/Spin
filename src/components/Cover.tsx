@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Track } from '@shared/types';
-import { coverPalette, samplePeaks, trackArtUrl } from '../lib/media';
+import { coverPalette, samplePeaks, trackCoverUrl } from '../lib/media';
 
 interface CoverProps {
   track: Track;
@@ -16,16 +16,24 @@ interface CoverProps {
 export function Cover({ track, code, priority = false, className = '' }: CoverProps) {
   const palette = useMemo(() => coverPalette(track.id), [track.id]);
   const bars = useMemo(() => samplePeaks(track.peaks, 34, track.id), [track.id, track.peaks]);
+  const coverUrl = trackCoverUrl(track, code);
+  const [failed, setFailed] = useState(false);
 
-  if (track.hasArt) {
+  useEffect(() => {
+    setFailed(false);
+  }, [coverUrl]);
+
+  if (coverUrl && !failed) {
     return (
       <img
         className={`cover-img ${className}`}
-        src={trackArtUrl(code, track.id)}
+        src={coverUrl}
         alt=""
         draggable={false}
         loading={priority ? 'eager' : 'lazy'}
         decoding="async"
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
       />
     );
   }

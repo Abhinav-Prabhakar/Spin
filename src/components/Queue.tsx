@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Reorder, useDragControls } from 'framer-motion';
-import { CloudUpload, Disc3, LayoutGrid, List, Play, Plus, X } from 'lucide-react';
+import { AnimatePresence, Reorder, motion, useDragControls } from 'framer-motion';
+import { CloudUpload, Disc3, LayoutGrid, Link2, List, Play, Plus, X } from 'lucide-react';
 import type { Track } from '@shared/types';
 import { formatTime } from '../lib/media';
 import { Cover } from './Cover';
@@ -19,6 +19,7 @@ interface QueueProps {
   onRemove: (id: string) => void;
   onReorder: (ids: string[]) => void;
   onPick: () => void;
+  onAddLink: (url: string) => boolean;
 }
 
 export function Queue({
@@ -31,9 +32,12 @@ export function Queue({
   onRemove,
   onReorder,
   onPick,
+  onAddLink,
 }: QueueProps) {
   const [view, setView] = useState<QueueView>('list');
   const [order, setOrder] = useState<string[]>(() => tracks.map((track) => track.id));
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkValue, setLinkValue] = useState('');
 
   useEffect(() => {
     const next = tracks.map((track) => track.id);
@@ -49,6 +53,20 @@ export function Queue({
   const handleReorder = (nextIds: string[]) => {
     setOrder(nextIds);
     onReorder(nextIds);
+  };
+
+  const submitLink = (event: React.FormEvent) => {
+    event.preventDefault();
+    const value = linkValue.trim();
+    if (!value) return;
+    if (onAddLink(value)) {
+      setLinkValue('');
+      setLinkOpen(false);
+    }
+  };
+
+  const openLink = () => {
+    setLinkOpen(true);
   };
 
   return (
@@ -84,6 +102,16 @@ export function Queue({
           </span>
           <button
             type="button"
+            className={`queue-link-toggle ${linkOpen ? 'is-active' : ''}`}
+            onClick={() => setLinkOpen((prev) => !prev)}
+            aria-label="Add a link"
+            aria-expanded={linkOpen}
+            title="Add a link"
+          >
+            <Link2 size={15} strokeWidth={1.8} />
+          </button>
+          <button
+            type="button"
             className="queue-add"
             onClick={onPick}
             aria-label="Share a track"
@@ -94,9 +122,38 @@ export function Queue({
         </div>
       </div>
 
+      <AnimatePresence initial={false}>
+        {linkOpen && (
+          <motion.form
+            className="queue-link"
+            onSubmit={submitLink}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <Link2 size={14} strokeWidth={1.8} aria-hidden="true" />
+            <input
+              className="queue-link-input"
+              value={linkValue}
+              onChange={(event) => setLinkValue(event.target.value)}
+              placeholder="Paste any link…"
+              inputMode="url"
+              autoComplete="off"
+              spellCheck={false}
+              autoFocus
+              aria-label="Link to add"
+            />
+            <button type="submit" className="queue-link-submit" disabled={!linkValue.trim()}>
+              Add
+            </button>
+          </motion.form>
+        )}
+      </AnimatePresence>
+
       <div className="queue-body">
         {tracks.length === 0 ? (
-          <QueueEmpty onPick={onPick} />
+          <QueueEmpty onPick={onPick} onLink={openLink} />
         ) : view === 'list' ? (
           <Reorder.Group
             as="div"
@@ -272,14 +329,22 @@ function QueueTile({ track, code, active, playing, getLevels, onSelect, onRemove
   );
 }
 
-function QueueEmpty({ onPick }: { onPick: () => void }) {
+function QueueEmpty({ onPick, onLink }: { onPick: () => void; onLink: () => void }) {
   return (
-    <button type="button" className="queue-empty" onClick={onPick}>
+    <div className="queue-empty">
       <span className="queue-empty-icon">
         <CloudUpload size={24} strokeWidth={1.5} />
       </span>
       <span className="queue-empty-title">share a track</span>
-      <span className="queue-empty-sub">drag & drop anywhere</span>
-    </button>
+      <span className="queue-empty-sub">drop a file, or paste any link</span>
+      <span className="queue-empty-actions">
+        <button type="button" className="queue-empty-action" onClick={onPick}>
+          Choose a file
+        </button>
+        <button type="button" className="queue-empty-action" onClick={onLink}>
+          Paste a link
+        </button>
+      </span>
+    </div>
   );
 }
