@@ -54,7 +54,9 @@ RESOLVER_KEY=change-me PUBLIC_URL=https://resolver.example.com \
   node resolver/server.mjs
 ```
 
-Deploy it anywhere with a stable HTTPS address — a VPS, Fly.io, Render, Railway, or a home server behind a tunnel. YouTube blocks datacenter IPs for *extraction*, but a resolver on a residential connection is usually the most reliable.
+Deploy it anywhere with a stable HTTPS address — a VPS, Fly.io, Render, Railway, or a home server behind a tunnel. YouTube blocks datacenter IPs for *extraction*, so the image can route yt-dlp through a free Cloudflare WARP tunnel (`WARP_PROXY=1`). A resolver on a residential connection is still the most reliable.
+
+`GET /probe?url=…&client=…` returns yt-dlp's metadata result or error for one link, which is handy for checking a host's IP reputation.
 
 ## Point Spin at it
 
@@ -74,6 +76,9 @@ The Worker only calls the resolver for YouTube links (or as a fallback when nati
 | `PUBLIC_URL` | `http://localhost:$PORT` | Origin used for returned media URLs. Use the public HTTPS URL in production. |
 | `PORT` | `8787` | Listen port. |
 | `YTDLP_BIN` | `yt-dlp` | Path to the yt-dlp binary. |
+| `YTDLP_CLIENT` | unset | Pin the YouTube player client, e.g. `tv_simply`. |
+| `YTDLP_PROXY` | unset | Proxy passed to yt-dlp, e.g. `socks5://127.0.0.1:8086`. |
+| `WARP_PROXY` | unset | Set to `1` to register a free Cloudflare WARP account and route yt-dlp through it. |
 | `TTL_MS` | 6 hours | How long downloaded audio is kept. |
 | `MAX_BYTES` | 150 MB | Largest download accepted. |
 | `MAX_ACTIVE` | `3` | Concurrent resolves before returning 429. |

@@ -26,6 +26,7 @@ const PORT = Number(process.env.PORT || 8787);
 const KEY = process.env.RESOLVER_KEY || '';
 const YTDLP = process.env.YTDLP_BIN || 'yt-dlp';
 const YTDLP_CLIENT = (process.env.YTDLP_CLIENT || '').trim();
+const YTDLP_PROXY = (process.env.YTDLP_PROXY || '').trim();
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
 const TTL_MS = Number(process.env.TTL_MS || 6 * 60 * 60 * 1000);
 const MAX_ACTIVE = Number(process.env.MAX_ACTIVE || 3);
@@ -84,6 +85,11 @@ async function run(args, timeout) {
 function clientArgs(client) {
   const name = (client || YTDLP_CLIENT).trim();
   return name ? ['--extractor-args', `youtube:player_client=${name}`] : [];
+}
+
+/** Route requests through a SOCKS/HTTP proxy (e.g. the local WARP tunnel). */
+function proxyArgs() {
+  return YTDLP_PROXY ? ['--proxy', YTDLP_PROXY] : [];
 }
 
 function json(res, status, body) {
@@ -156,6 +162,7 @@ async function resolveUrl(url) {
         '--skip-download',
         '-J',
         ...clientArgs(),
+        ...proxyArgs(),
         target.toString(),
       ],
       METADATA_TIMEOUT,
@@ -186,6 +193,7 @@ async function resolveUrl(url) {
           '-o',
           join(dir, 'audio.%(ext)s'),
           ...clientArgs(),
+          ...proxyArgs(),
           target.toString(),
         ],
         DOWNLOAD_TIMEOUT,
@@ -366,6 +374,7 @@ const server = createServer(async (req, res) => {
           '--skip-download',
           '-J',
           ...clientArgs(client),
+          ...proxyArgs(),
           target,
         ],
         METADATA_TIMEOUT,
