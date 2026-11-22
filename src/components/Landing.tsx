@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { ArrowRight, LoaderCircle, Play } from 'lucide-react';
+import { apiUrl } from '../lib/api';
 import { Brand } from './Brand';
 import { Orbit } from './Orbit';
 
@@ -17,7 +18,7 @@ export function Landing({ onEnter }: LandingProps) {
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch('/api/rooms', { method: 'POST' });
+      const response = await fetch(apiUrl('/api/rooms'), { method: 'POST' });
       if (!response.ok) throw new Error('Could not start a room.');
       const data = (await response.json()) as { code?: string };
       if (!data.code) throw new Error('Could not start a room.');
