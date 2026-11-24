@@ -84,6 +84,10 @@ wrangler secret put URL_RESOLVER       # e.g. https://resolver.example.com
 wrangler secret put URL_RESOLVER_KEY   # the resolver's bearer token
 ```
 
+This repo's resolver runs on Render's free tier at `https://spin-resolver.onrender.com`. Free instances sleep after 15 minutes, so the Worker has a five-minute cron trigger that pings `/health` and keeps it warm. YouTube also rejects datacenter IPs, so the container starts a free Cloudflare WARP tunnel (`WARP_PROXY=1`) and points `yt-dlp` at it.
+
+YouTube media URLs are keyed by video id (`/media/yt-<id>`), so a room's track keeps working after the resolver restarts: the next request downloads that video again. Everything else keeps its six-hour expiry.
+
 Only download content you have the rights to. HLS and DRM services (Spotify, Apple Music, Tidal, Deezer, Amazon Music) are not supported and return a clear message.
 
 ## Under the hood
