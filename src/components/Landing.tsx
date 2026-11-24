@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { ArrowRight, LoaderCircle, Play } from 'lucide-react';
 import { apiUrl } from '../lib/api';
+import { LANDING_AMBIENT } from '../lib/palette';
+import { Ambient } from './Ambient';
 import { Brand } from './Brand';
 import { Orbit } from './Orbit';
 
@@ -50,6 +52,7 @@ export function Landing({ onEnter }: LandingProps) {
 
   return (
     <div className="landing">
+      <Ambient palette={LANDING_AMBIENT} />
       <header className="landing-header">
         <Brand />
       </header>

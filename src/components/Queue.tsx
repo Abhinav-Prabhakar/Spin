@@ -152,56 +152,86 @@ export function Queue({
       </AnimatePresence>
 
       <div className="queue-body">
-        {tracks.length === 0 ? (
-          <QueueEmpty onPick={onPick} onLink={openLink} />
-        ) : view === 'list' ? (
-          <Reorder.Group
-            as="div"
-            axis="y"
-            values={order}
-            onReorder={handleReorder}
-            className="queue-list"
-          >
-            {ordered.map((track) => (
-              <QueueRow
-                key={track.id}
-                track={track}
-                code={code}
-                active={track.id === currentId}
-                playing={playing && track.id === currentId}
-                getLevels={getLevels}
-                onSelect={onSelect}
-                onRemove={onRemove}
-              />
-            ))}
-          </Reorder.Group>
-        ) : (
-          <div className="queue-grid">
-            {ordered.map((track) => (
-              <QueueTile
-                key={track.id}
-                track={track}
-                code={code}
-                active={track.id === currentId}
-                playing={playing && track.id === currentId}
-                getLevels={getLevels}
-                onSelect={onSelect}
-                onRemove={onRemove}
-              />
-            ))}
-            <button
-              type="button"
-              className="queue-tile-add"
-              onClick={onPick}
-              aria-label="Share another track"
-              title="Share a track"
+        <AnimatePresence mode="wait" initial={false}>
+          {tracks.length === 0 ? (
+            <motion.div
+              key="empty"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             >
-              <span>
-                <Plus size={18} strokeWidth={1.7} />
-              </span>
-            </button>
-          </div>
-        )}
+              <QueueEmpty onPick={onPick} onLink={openLink} />
+            </motion.div>
+          ) : view === 'list' ? (
+            <motion.div
+              key="list"
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <Reorder.Group
+                as="div"
+                axis="y"
+                values={order}
+                onReorder={handleReorder}
+                className="queue-list"
+              >
+                <AnimatePresence initial={false}>
+                  {ordered.map((track) => (
+                    <QueueRow
+                      key={track.id}
+                      track={track}
+                      code={code}
+                      active={track.id === currentId}
+                      playing={playing && track.id === currentId}
+                      getLevels={getLevels}
+                      onSelect={onSelect}
+                      onRemove={onRemove}
+                    />
+                  ))}
+                </AnimatePresence>
+              </Reorder.Group>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="grid"
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <div className="queue-grid">
+                <AnimatePresence initial={false}>
+                  {ordered.map((track) => (
+                    <QueueTile
+                      key={track.id}
+                      track={track}
+                      code={code}
+                      active={track.id === currentId}
+                      playing={playing && track.id === currentId}
+                      getLevels={getLevels}
+                      onSelect={onSelect}
+                      onRemove={onRemove}
+                    />
+                  ))}
+                </AnimatePresence>
+                <button
+                  type="button"
+                  className="queue-tile-add"
+                  onClick={onPick}
+                  aria-label="Share another track"
+                  title="Share a track"
+                >
+                  <span>
+                    <Plus size={18} strokeWidth={1.7} />
+                  </span>
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </aside>
   );
@@ -239,6 +269,10 @@ function QueueRow({ track, code, active, playing, getLevels, onSelect, onRemove 
         lastDrag.current = Date.now();
       }}
       whileDrag={{ scale: 1.015, zIndex: 6 }}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.97 }}
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
       className="queue-item"
     >
       <div className={`queue-row ${active ? 'is-active' : ''}`}>
@@ -295,7 +329,14 @@ interface TileProps {
 
 function QueueTile({ track, code, active, playing, getLevels, onSelect, onRemove }: TileProps) {
   return (
-    <div className={`queue-tile ${active ? 'is-active' : ''}`}>
+    <motion.div
+      layout
+      className={`queue-tile ${active ? 'is-active' : ''}`}
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.96 }}
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+    >
       <button type="button" className="tile-art" onClick={() => onSelect(track.id)}>
         <Cover track={track} code={code} />
         <span className={`tile-overlay ${active ? 'is-on' : ''}`}>
@@ -325,7 +366,7 @@ function QueueTile({ track, code, active, playing, getLevels, onSelect, onRemove
           {track.artist || (track.addedBy ? `shared by ${track.addedBy.name}` : 'shared track')}
         </span>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

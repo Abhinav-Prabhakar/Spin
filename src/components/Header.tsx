@@ -53,9 +53,21 @@ export function Header({ code, users, me, connected, copied, onHome, onCopy, onS
 
       <div className="header-right">
         <div className="people" aria-label={`${users.length} listening`}>
-          {visible.map((user) => (
-            <Avatar key={user.id} user={user} self={user.id === me?.id} size={30} />
-          ))}
+          <AnimatePresence initial={false}>
+            {visible.map((user) => (
+              <motion.span
+                key={user.id}
+                className="people-slot"
+                layout
+                initial={{ opacity: 0, scale: 0.55 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.55 }}
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <Avatar user={user} self={user.id === me?.id} size={30} />
+              </motion.span>
+            ))}
+          </AnimatePresence>
           {hidden > 0 && (
             <span className="people-more" title={`${hidden} more listening`}>
               +{hidden}

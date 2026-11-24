@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { clamp, formatTime, samplePeaks } from '../lib/media';
 
 interface TimelineProps {
@@ -17,7 +17,12 @@ const WaveBars = memo(function WaveBars({ heights }: { heights: number[] }) {
         <span
           key={index}
           className="wave-bar"
-          style={{ height: `${Math.max(6, Math.round(height * 100))}%` }}
+          style={
+            {
+              height: `${Math.max(6, Math.round(height * 100))}%`,
+              '--i': index,
+            } as CSSProperties
+          }
         />
       ))}
     </>
@@ -142,10 +147,10 @@ export function Timeline({ peaks, seed, duration, disabled = false, getProgress,
         }}
         onKeyDown={handleKey}
       >
-        <div className="wave-layer wave-idle">
+        <div className="wave-layer wave-idle" key={`idle-${seed}`}>
           <WaveBars heights={heights} />
         </div>
-        <div className="wave-layer wave-played">
+        <div className="wave-layer wave-played" key={`played-${seed}`}>
           <WaveBars heights={heights} />
         </div>
         <div className="timeline-head" />

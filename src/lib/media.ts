@@ -86,20 +86,28 @@ export interface CoverPalette {
   from: string;
   to: string;
   ink: string;
+  accent: string;
   ring: string;
 }
 
+/**
+ * Pressed-paper sleeves: muted grounds with one deeper ink and a single
+ * saturated accent. The cover and the room's ambient wash both derive from
+ * these, so a generated sleeve never fights its background.
+ */
 const PALETTES: CoverPalette[] = [
-  { from: '#efe4d2', to: '#dcc29b', ink: '#3c3122', ring: 'rgba(255,255,255,.45)' },
-  { from: '#e4e9df', to: '#c3d0ba', ink: '#273026', ring: 'rgba(255,255,255,.5)' },
-  { from: '#e3e8f0', to: '#c4cfe0', ink: '#25303e', ring: 'rgba(255,255,255,.48)' },
-  { from: '#f0e0da', to: '#e0c2b7', ink: '#3a2922', ring: 'rgba(255,255,255,.45)' },
-  { from: '#eae2ee', to: '#d3c3de', ink: '#332a3b', ring: 'rgba(255,255,255,.5)' },
-  { from: '#e9e7e1', to: '#cdc9c0', ink: '#2e2c28', ring: 'rgba(255,255,255,.5)' },
-  { from: '#f3e8d0', to: '#e7cf9f', ink: '#3b3120', ring: 'rgba(255,255,255,.5)' },
-  { from: '#dfe8e6', to: '#bed2ce', ink: '#20302d', ring: 'rgba(255,255,255,.5)' },
-  { from: '#ece8df', to: '#d8cdb8', ink: '#372f22', ring: 'rgba(255,255,255,.45)' },
-  { from: '#e7e3e8', to: '#cbc2cf', ink: '#302934', ring: 'rgba(255,255,255,.45)' },
+  { from: '#f3e6d2', to: '#d9b98c', ink: '#3a2f21', accent: '#b5653f', ring: 'rgba(255,255,255,.45)' },
+  { from: '#e6ebdf', to: '#b9c9ac', ink: '#26301f', accent: '#6d8a5a', ring: 'rgba(255,255,255,.5)' },
+  { from: '#e4e9f2', to: '#b6c6dd', ink: '#22303f', accent: '#5a789e', ring: 'rgba(255,255,255,.48)' },
+  { from: '#f2e2dc', to: '#ddb6aa', ink: '#3a2620', accent: '#b76a55', ring: 'rgba(255,255,255,.45)' },
+  { from: '#ece3f0', to: '#cdb9d9', ink: '#322638', accent: '#8b6aa3', ring: 'rgba(255,255,255,.5)' },
+  { from: '#efe9dc', to: '#d3c4a6', ink: '#332d20', accent: '#9c8150', ring: 'rgba(255,255,255,.5)' },
+  { from: '#f6ecd2', to: '#e8d29b', ink: '#3a301b', accent: '#b99433', ring: 'rgba(255,255,255,.5)' },
+  { from: '#dfeae7', to: '#aecbc5', ink: '#1f302d', accent: '#4f8279', ring: 'rgba(255,255,255,.5)' },
+  { from: '#f0e3d8', to: '#d8b9a4', ink: '#372a20', accent: '#a4694a', ring: 'rgba(255,255,255,.45)' },
+  { from: '#eae8e3', to: '#c7c2b8', ink: '#2b2a26', accent: '#7d776a', ring: 'rgba(255,255,255,.45)' },
+  { from: '#e8eadb', to: '#c6ccab', ink: '#2c301f', accent: '#7f8a4c', ring: 'rgba(255,255,255,.48)' },
+  { from: '#ece2e6', to: '#d0b4c0', ink: '#342229', accent: '#9a5f76', ring: 'rgba(255,255,255,.45)' },
 ];
 
 export function coverPalette(id: string): CoverPalette {

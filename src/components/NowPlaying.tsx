@@ -72,10 +72,10 @@ export function NowPlaying({
           <motion.div
             key={track?.id ?? 'empty'}
             className="cover-shell"
-            initial={{ opacity: 0, scale: 0.965, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.985 }}
-            transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+            initial={{ opacity: 0, scale: 0.96, y: 14, filter: 'blur(7px)' }}
+            animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, scale: 0.985, y: -8, filter: 'blur(7px)' }}
+            transition={{ duration: 0.62, ease: [0.22, 1, 0.36, 1] }}
           >
             <div className={`cover-breathe ${playing && !showListenOverlay ? 'is-playing' : ''}`}>
               {track ? (
@@ -126,29 +126,40 @@ export function NowPlaying({
       </div>
 
       <div className="track-info">
-        {track ? (
-          <>
-            <h1 className="track-title" title={track.title}>
-              {track.title}
-            </h1>
-            <div className="artist-row">
-              {track.artist && <span className="track-artist">{track.artist}</span>}
-              {track.artist && addedBy && <span className="meta-dot" />}
-              {addedBy && <Avatar user={addedBy} size={15} className="added-by" />}
-              <LiveBars
-                playing={playing}
-                bars={4}
-                getLevels={engine.getLevels}
-                className="title-bars"
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            <h1 className="track-title empty-title">Start with a song</h1>
-            <p className="track-artist">Everyone hears it together.</p>
-          </>
-        )}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={track?.id ?? 'empty'}
+            className="track-copy"
+            initial={{ opacity: 0, y: 7 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -5 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {track ? (
+              <>
+                <h1 className="track-title" title={track.title}>
+                  {track.title}
+                </h1>
+                <div className="artist-row">
+                  {track.artist && <span className="track-artist">{track.artist}</span>}
+                  {track.artist && addedBy && <span className="meta-dot" />}
+                  {addedBy && <Avatar user={addedBy} size={15} className="added-by" />}
+                  <LiveBars
+                    playing={playing}
+                    bars={4}
+                    getLevels={engine.getLevels}
+                    className="title-bars"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <h1 className="track-title empty-title">Start with a song</h1>
+                <p className="track-artist">Everyone hears it together.</p>
+              </>
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {track && engine.sourceError && (

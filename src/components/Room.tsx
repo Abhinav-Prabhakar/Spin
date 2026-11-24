@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, CloudUpload } from 'lucide-react';
 import type { ToastItem } from './Toasts';
+import { Ambient } from './Ambient';
 import { Header } from './Header';
 import { Hearts } from './Hearts';
 import { NowPlaying } from './NowPlaying';
@@ -11,6 +12,7 @@ import { UploadTray } from './UploadTray';
 import { Toasts } from './Toasts';
 import { Brand } from './Brand';
 import { useRoom } from '../hooks/useRoom';
+import { useAmbientPalette } from '../hooks/useAmbientPalette';
 import { useAudioEngine } from '../hooks/useAudioEngine';
 import { useUploads } from '../hooks/useUploads';
 import { inviteUrl } from '../lib/media';
@@ -61,6 +63,8 @@ export function Room({ code, onHome }: RoomProps) {
   const currentTrack = room.playback?.trackId
     ? room.tracks.find((track) => track.id === room.playback?.trackId) ?? null
     : null;
+  const ambient = useAmbientPalette(currentTrack, code);
+  const roomStyle = { '--room-accent': ambient.accent } as CSSProperties;
 
   useEffect(() => {
     return () => {
@@ -225,7 +229,8 @@ export function Room({ code, onHome }: RoomProps) {
   if (room.status === 'error') {
     const notFound = room.error === 'not-found';
     return (
-      <div className="room-page">
+      <div className="room-page" style={roomStyle}>
+        <Ambient palette={ambient} />
         <header className="app-header">
           <Brand />
           <span />
@@ -253,7 +258,8 @@ export function Room({ code, onHome }: RoomProps) {
 
   if (room.status === 'loading' || !room.playback || !room.me) {
     return (
-      <div className="room-page">
+      <div className="room-page" style={roomStyle}>
+        <Ambient palette={ambient} />
         <header className="app-header">
           <Brand />
           <div className="room-pill is-static">
@@ -278,7 +284,8 @@ export function Room({ code, onHome }: RoomProps) {
   }
 
   return (
-    <div className="room-page">
+    <div className="room-page" style={roomStyle}>
+      <Ambient palette={ambient} />
       <Header
         code={code}
         users={room.users}

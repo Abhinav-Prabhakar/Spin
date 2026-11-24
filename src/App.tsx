@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
+import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
 import { Landing } from './components/Landing';
 import { Room } from './components/Room';
 import { appPath } from './lib/api';
 import { parseRoomPath } from './lib/media';
+
+const EASE = [0.22, 1, 0.36, 1] as const;
 
 export default function App() {
   const [code, setCode] = useState<string | null>(() => parseRoomPath());
@@ -30,6 +33,20 @@ export default function App() {
     window.scrollTo(0, 0);
   }, []);
 
-  if (code) return <Room key={code} code={code} onHome={home} />;
-  return <Landing onEnter={enter} />;
+  return (
+    <MotionConfig reducedMotion="user">
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={code ?? 'landing'}
+          className="app-shell"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.32, ease: EASE }}
+        >
+          {code ? <Room code={code} onHome={home} /> : <Landing onEnter={enter} />}
+        </motion.div>
+      </AnimatePresence>
+    </MotionConfig>
+  );
 }
