@@ -35,6 +35,14 @@ export default {
       return json({ error: 'Something went wrong.' }, 500);
     }
   },
+
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    if (!env.URL_RESOLVER) return;
+    const base = env.URL_RESOLVER.trim().replace(/\/+$/, '');
+    ctx.waitUntil(
+      fetch(`${base}/health`, { signal: AbortSignal.timeout(10_000) }).catch(() => undefined),
+    );
+  },
 } satisfies ExportedHandler<Env>;
 
 async function route(request: Request, env: Env): Promise<Response> {

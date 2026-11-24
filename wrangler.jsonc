@@ -14,5 +14,7 @@
       "id": "41df75e4f3904c1a86068c4b359cb8a8"
     }
   ],
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  // Keeps the free-tier resolver warm so YouTube links do not wait for a cold start.
+  "triggers": { "crons": ["*/5 * * * *"] }
 }

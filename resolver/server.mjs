@@ -57,8 +57,10 @@ const AUDIO_MIME = {
   '.webm': 'audio/webm',
 };
 
-/** @type {Map<string, { file: string, dir: string, size: number, mime: string, createdAt: number }>} */
+/** @type {Map<string, { file: string, dir: string, size: number, mime: string, createdAt: number, result: object }>} */
 const entries = new Map();
+/** @type {Map<string, Promise<object | null>>} */
+const inflight = new Map();
 let active = 0;
 
 if (!KEY && !ALLOW_INSECURE) {
@@ -126,6 +128,22 @@ function readJson(req, limit = 8 * 1024) {
     });
     req.on('error', reject);
   });
+}
+
+/** YouTube's 11-character video id, when the link is one. */
+function youtubeId(target) {
+  const host = target.hostname.toLowerCase().replace(/^www\.|^m\./, '');
+  let id = null;
+  if (host === 'youtu.be') {
+    id = target.pathname.split('/')[1] ?? null;
+  } else if (host === 'youtube.com' || host === 'music.youtube.com' || host === 'youtube-nocookie.com') {
+    id = target.searchParams.get('v');
+    if (!id) {
+      const match = /^\/(?:shorts|embed|live)\/([^/?#]+)/.exec(target.pathname);
+      id = match ? match[1] : null;
+    }
+  }
+  return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
 }
 
 function pickThumbnail(info) {
@@ -219,25 +237,23 @@ async function resolveUrl(url) {
       throw Object.assign(new Error('That audio is too large for this resolver.'), { status: 413 });
     }
 
-    const id = randomUUID();
-    entries.set(id, {
-      file,
-      dir,
-      size: stats.size,
-      mime: AUDIO_MIME[extname(name).toLowerCase()] || 'audio/mpeg',
-      createdAt: Date.now(),
-    });
-
-    return {
+    // YouTube ids double as stable media ids, so a room's track keeps working
+    // after a restart or expiry: the next request re-downloads the same video.
+    const videoId = youtubeId(target);
+    const id = videoId ? `yt-${videoId}` : randomUUID();
+    const mime = AUDIO_MIME[extname(name).toLowerCase()] || 'audio/mpeg';
+    const result = {
       audioUrl: `${PUBLIC_URL}/media/${id}`,
       title: clean(info.track) || clean(info.title) || 'Untitled',
       artist: clean(info.artist) || clean(info.uploader) || clean(info.channel) || '',
       album: clean(info.album) || '',
       duration: Number(info.duration) > 0 ? Number(info.duration) : 0,
       artUrl: pickThumbnail(info),
-      mime: AUDIO_MIME[extname(name).toLowerCase()] || 'audio/mpeg',
+      mime,
       size: stats.size,
     };
+    entries.set(id, { file, dir, size: stats.size, mime, createdAt: Date.now(), result });
+    return result;
   } catch (err) {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
     throw err;
@@ -279,9 +295,30 @@ function parseRange(header, total) {
   return { start, end: Math.min(end, total - 1) };
 }
 
-function serveMedia(req, res, id) {
+/** Re-download a YouTube track whose file expired or was lost in a restart. */
+async function ensureEntry(id) {
   const entry = entries.get(id);
-  if (!entry || Date.now() - entry.createdAt > TTL_MS) {
+  if (entry && Date.now() - entry.createdAt <= TTL_MS) return entry;
+  const match = /^yt-([A-Za-z0-9_-]{11})$/.exec(id);
+  if (!match) return null;
+  const pending = inflight.get(id);
+  if (pending) return pending;
+  const job = (async () => {
+    try {
+      await resolveUrl(`https://www.youtube.com/watch?v=${match[1]}`);
+      return entries.get(id) ?? null;
+    } catch (err) {
+      console.error('[resolver] refresh failed', short(err));
+      return null;
+    }
+  })().finally(() => inflight.delete(id));
+  inflight.set(id, job);
+  return job;
+}
+
+async function serveMedia(req, res, id) {
+  const entry = await ensureEntry(id);
+  if (!entry) {
     json(res, 404, { error: 'That audio has expired.' });
     return;
   }
@@ -420,7 +457,7 @@ const server = createServer(async (req, res) => {
   }
 
   if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname.startsWith('/media/')) {
-    serveMedia(req, res, url.pathname.slice('/media/'.length));
+    await serveMedia(req, res, decodeURIComponent(url.pathname.slice('/media/'.length)));
     return;
   }
 
