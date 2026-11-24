@@ -14,7 +14,7 @@ export function PlayGlyph({ size = 24, className }: GlyphProps) {
       className={className}
     >
       <path
-        d="M8.4 4.94c0-.91.99-1.48 1.78-1.03l11.08 6.3c.79.45.79 1.61 0 2.06l-11.08 6.3c-.79.45-1.78-.12-1.78-1.03V4.94Z"
+        d="M5.6 5.7c0-.91.99-1.48 1.78-1.03l11.08 6.3c.79.45.79 1.61 0 2.06l-11.08 6.3c-.79.45-1.78-.12-1.78-1.03V5.7Z"
         fill="currentColor"
       />
     </svg>

@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react';
-import { ArrowRight, LoaderCircle, Play } from 'lucide-react';
+import { ArrowRight, LoaderCircle } from 'lucide-react';
 import { apiUrl } from '../lib/api';
 import { LANDING_AMBIENT } from '../lib/palette';
 import { Ambient } from './Ambient';
 import { Brand } from './Brand';
+import { PlayGlyph } from './Glyphs';
 import { Orbit } from './Orbit';
 
 interface LandingProps {
@@ -78,7 +79,7 @@ export function Landing({ onEnter }: LandingProps) {
                 {busy ? (
                   <LoaderCircle size={16} className="spin" strokeWidth={2} />
                 ) : (
-                  <Play size={14} fill="currentColor" strokeWidth={0} />
+                  <PlayGlyph size={14} />
                 )}
               </span>
               <span>{busy ? 'Opening a room' : 'Start a room'}</span>

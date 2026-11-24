@@ -613,7 +613,6 @@ button.room-pill:hover {
   transform: scale(0.9);
   transition: opacity 0.24s var(--ease), transform 0.24s var(--ease);
   box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.45);
-  padding-left: 1px;
 }
 
 .cover-tap:hover .cover-tap-icon,
@@ -1571,7 +1570,6 @@ button.room-pill:hover {
   color: #111;
   display: grid;
   place-items: center;
-  padding-left: 1px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
@@ -2663,7 +2661,6 @@ button.room-pill:hover {
   display: grid;
   place-items: center;
   flex: none;
-  padding-left: 1px;
   box-shadow: 0 8px 18px -10px rgba(0, 0, 0, 0.55);
 }
 

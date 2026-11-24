@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, Reorder, motion, useDragControls } from 'framer-motion';
-import { CloudUpload, Disc3, LayoutGrid, Link2, List, Play, Plus, X } from 'lucide-react';
+import { CloudUpload, Disc3, LayoutGrid, Link2, List, Plus, X } from 'lucide-react';
 import type { Track } from '@shared/types';
 import { formatTime } from '../lib/media';
 import { Cover } from './Cover';
@@ -344,7 +344,7 @@ function QueueTile({ track, code, active, playing, getLevels, onSelect, onRemove
             <LiveBars playing bars={3} getLevels={getLevels} className="on-dark" />
           ) : (
             <span className="tile-play">
-              <Play size={14} fill="currentColor" strokeWidth={0} />
+              <PlayGlyph size={14} />
             </span>
           )}
         </span>
